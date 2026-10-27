@@ -23,7 +23,7 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
-# ---------------- DATABASE ----------------
+# ---------------- DATABASE -------------
 
 def get_db():
     conn = sqlite3.connect(DATABASE)
