@@ -566,15 +566,26 @@ def validate_file():
         return result
 
     filename = request.args.get("filename", "")
+    safe_name = secure_filename(filename)
 
-    # INTENTIONAL VULNERABILITY:
-    # User-controlled input reaches a shell command.
-    command = "file " + filename
+    if not safe_name:
+        return render_template_string(
+            "<h1>Validation Failed</h1><pre>{{ output }}</pre>",
+            output="Invalid filename."
+        )
+
+    upload_root = os.path.abspath(UPLOAD_FOLDER)
+    file_path = os.path.abspath(os.path.join(upload_root, safe_name))
+
+    if os.path.commonpath([upload_root, file_path]) != upload_root:
+        return render_template_string(
+            "<h1>Validation Failed</h1><pre>{{ output }}</pre>",
+            output="Invalid file path."
+        )
 
     try:
         output = subprocess.check_output(
-            command,
-            shell=True,
+            ["file", file_path],
             stderr=subprocess.STDOUT,
             text=True
         )
