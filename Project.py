@@ -5,6 +5,7 @@ import hashlib
 import random
 import string
 import traceback
+import subprocess
 from datetime import datetime
 from flask import (
     Flask, request, session, redirect,
@@ -15,7 +16,7 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# Demo application configuration
+# Intentionally weak demo configuration
 app.secret_key = "company-secret-key-123"
 DATABASE = "documents.db"
 UPLOAD_FOLDER = "uploads"
@@ -23,7 +24,7 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
-# ---------------- DATABASE -------------
+# ---------------- DATABASE ----------------
 
 def get_db():
     conn = sqlite3.connect(DATABASE)
@@ -53,7 +54,6 @@ def initialize_database():
         )
     """)
 
-    # Create sample accounts
     users = [
         ("admin", "admin123", "admin"),
         ("alice", "password123", "user"),
@@ -103,7 +103,7 @@ def require_login():
 
 
 def make_session_token():
-    # Generates a predictable, non-cryptographic token.
+    # Intentionally predictable, non-cryptographic randomness.
     return "".join(
         random.choice(string.ascii_letters + string.digits)
         for _ in range(12)
@@ -128,6 +128,8 @@ def home():
           <li><a href="/search">Search documents</a></li>
           <li><a href="/profile">My profile</a></li>
           <li><a href="/admin">Administration</a></li>
+          <li><a href="/register">Register account</a></li>
+          <li><a href="/validate-file">File validation</a></li>
           <li><a href="/logout">Log out</a></li>
         </ul>
     """, user=user)
@@ -143,7 +145,8 @@ def login():
 
         db = get_db()
 
-        # Vulnerability: user input is inserted directly into SQL.
+        # INTENTIONAL VULNERABILITY:
+        # SQL injection through string concatenation.
         query = (
             "SELECT * FROM users WHERE username = '"
             + username
@@ -177,6 +180,7 @@ def login():
             <input name="password" type="password" required><br><br>
             <button type="submit">Log in</button>
         </form>
+        <a href="/register">Create an account</a>
     """, error=error)
 
 
@@ -244,11 +248,12 @@ def upload():
         description = request.form.get("description", "")
 
         if file and file.filename:
-            # The filename is cleaned, but content and file size
+            # Filename is cleaned, but size and file content
             # are not validated.
             filename = secure_filename(file.filename)
 
-            # Vulnerability: an existing file can be overwritten.
+            # INTENTIONAL VULNERABILITY:
+            # Existing files can be overwritten.
             file.save(os.path.join(UPLOAD_FOLDER, filename))
 
             user = current_user()
@@ -302,9 +307,8 @@ def download(doc_id):
     if not doc:
         abort(404)
 
-    # Vulnerability: there is no ownership or role check.
-    # Any logged-in user can request another user's document.
-
+    # INTENTIONAL VULNERABILITY:
+    # No document ownership or role check.
     path = os.path.join(UPLOAD_FOLDER, doc["filename"])
 
     if not os.path.exists(path):
@@ -323,7 +327,9 @@ def delete_document(doc_id):
 
     db = get_db()
 
-    # Vulnerability: no ownership check and state change via GET.
+    # INTENTIONAL VULNERABILITY:
+    # State-changing action via GET, without CSRF protection
+    # or a document ownership check.
     doc = db.execute(
         "SELECT * FROM documents WHERE id = ?",
         (doc_id,)
@@ -356,7 +362,8 @@ def search():
 
         db = get_db()
 
-        # Vulnerability: SQL injection through the search input.
+        # INTENTIONAL VULNERABILITY:
+        # SQL injection through search input.
         query = (
             "SELECT * FROM documents WHERE filename LIKE '%"
             + query_text
@@ -420,8 +427,8 @@ def admin():
 
     user = current_user()
 
-    # Vulnerability: no server-side administrator authorization.
-    # Hiding the link in the interface would not fix this either.
+    # INTENTIONAL VULNERABILITY:
+    # Missing server-side administrator authorization.
 
     db = get_db()
     users = db.execute(
@@ -482,7 +489,8 @@ def diagnostics():
     if result:
         return result
 
-    # Vulnerability: detailed internal information is exposed.
+    # INTENTIONAL VULNERABILITY:
+    # Internal stack traces are returned to the user.
     try:
         db = get_db()
         db.execute("SELECT * FROM nonexistent_table").fetchall()
@@ -496,11 +504,104 @@ def diagnostics():
         )
 
 
+# ---------------- ACCOUNT REGISTRATION ----------------
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    message = ""
+
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+
+        # INTENTIONAL VULNERABILITY:
+        # Public users can choose their own privilege level.
+        role = request.form.get("role", "user")
+
+        db = get_db()
+
+        try:
+            db.execute(
+                "INSERT INTO users (username, password, role) "
+                "VALUES (?, ?, ?)",
+                (username, password, role)
+            )
+            db.commit()
+            message = "Account created successfully."
+        except sqlite3.Error:
+            message = "Account creation failed."
+
+        db.close()
+
+    return render_template_string("""
+        <h1>Register Account</h1>
+        <p>{{ message }}</p>
+
+        <form method="POST">
+            <label>Username</label>
+            <input name="username" required><br><br>
+
+            <label>Password</label>
+            <input name="password" type="password" required><br><br>
+
+            <label>Role</label>
+            <select name="role">
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+            </select><br><br>
+
+            <button type="submit">Register</button>
+        </form>
+
+        <a href="/login">Login</a>
+    """, message=message)
+
+
+# ---------------- FILE VALIDATION ----------------
+
+@app.route("/validate-file")
+def validate_file():
+    result = require_login()
+    if result:
+        return result
+
+    filename = request.args.get("filename", "")
+
+    # INTENTIONAL VULNERABILITY:
+    # User-controlled input reaches a shell command.
+    command = "file " + filename
+
+    try:
+        output = subprocess.check_output(
+            command,
+            shell=True,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+
+        # The returned text is HTML-escaped by Jinja.
+        return render_template_string(
+            "<h1>File Validation Result</h1><pre>{{ output }}</pre>",
+            output=output
+        )
+
+    except subprocess.CalledProcessError as error:
+        return render_template_string(
+            "<h1>Validation Failed</h1><pre>{{ output }}</pre>",
+            output=error.output
+        )
+
+
 # ---------------- APPLICATION START ----------------
 
 if __name__ == "__main__":
     initialize_database()
 
-    # Intended for a local security lab only.
-    # Debug mode exposes additional diagnostic functionality.
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    # INTENTIONAL VULNERABILITY:
+    # Debug mode should never be enabled in production.
+    app.run(
+        host="127.0.0.1",
+        port=5000,
+        debug=True
+    )
+
