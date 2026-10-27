@@ -145,18 +145,12 @@ def login():
 
         db = get_db()
 
-        # INTENTIONAL VULNERABILITY:
-        # SQL injection through string concatenation.
         query = (
-            "SELECT * FROM users WHERE username = '"
-            + username
-            + "' AND password = '"
-            + password
-            + "'"
+            "SELECT * FROM users WHERE username = ? AND password = ?"
         )
 
         try:
-            user = db.execute(query).fetchone()
+            user = db.execute(query, (username, password)).fetchone()
         except sqlite3.Error:
             user = None
 
