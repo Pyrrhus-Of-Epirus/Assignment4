@@ -487,11 +487,8 @@ def diagnostics():
         db.close()
         return "Diagnostics successful."
     except Exception:
-        return (
-            "<h1>Diagnostic failure</h1><pre>"
-            + traceback.format_exc()
-            + "</pre>"
-        )
+        app.logger.exception("Diagnostic failure")
+        return "<h1>Diagnostic failure</h1><p>An internal error has occurred.</p>", 500
 
 
 # ---------------- ACCOUNT REGISTRATION ----------------
