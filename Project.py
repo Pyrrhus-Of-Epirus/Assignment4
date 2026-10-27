@@ -356,18 +356,14 @@ def search():
 
         db = get_db()
 
-        # INTENTIONAL VULNERABILITY:
-        # SQL injection through search input.
-        query = (
-            "SELECT * FROM documents WHERE filename LIKE '%"
-            + query_text
-            + "%' OR description LIKE '%"
-            + query_text
-            + "%'"
-        )
+        # Safe query: use parameter binding for user input.
+        like_pattern = f"%{query_text}%"
 
         try:
-            docs = db.execute(query).fetchall()
+            docs = db.execute(
+                "SELECT * FROM documents WHERE filename LIKE ? OR description LIKE ?",
+                (like_pattern, like_pattern)
+            ).fetchall()
         except sqlite3.Error:
             docs = []
 
